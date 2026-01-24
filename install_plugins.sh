@@ -133,7 +133,7 @@ if [ "$INSTALL_PLAYER" = true ]; then
     wget -q "${GITHUB_RAW}/bpking1/embyExternalUrl/refs/heads/main/embyWebAddExternalUrl/embyLaunchPotplayer.js" -O externalPlayer.js
 fi
 
-# 6. 修改 index.html (采用分行安全注入)
+# 6. 修改 index.html (BusyBox/Alpine 兼容注入方式)
 echo -e "${GREEN}正在应用修改到 index.html...${NC}"
 
 # 先清理所有旧注入，防止重复
@@ -142,31 +142,47 @@ sed -i '/dd-danmaku/d' index.html
 sed -i '/externalPlayer.js/d' index.html
 sed -i '/Emby Plugins/d' index.html
 
-# 在 </head> 之前分步注入，不使用 \n 变量以提高兼容性
-# 首先添加开始标记（所有安装选项共用）
-sed -i '/<\/head>/i <!-- Emby Plugins Start -->' index.html
+# 构建 </head> 前需要注入的内容（写入临时文件）
+HEAD_INJECT_FILE=$(mktemp)
+echo '<!-- Emby Plugins Start -->' > "$HEAD_INJECT_FILE"
 
-[ "$INSTALL_CRX" = true ] && {
-    sed -i '/<\/head>/i <link rel="stylesheet" id="theme-css" href="emby-crx/style.css" type="text/css" media="all" />' index.html
-    sed -i '/<\/head>/i <script src="emby-crx/common-utils.js"></script>' index.html
-    sed -i '/<\/head>/i <script src="emby-crx/jquery-3.6.0.min.js"></script>' index.html
-    sed -i '/<\/head>/i <script src="emby-crx/md5.min.js"></script>' index.html
-    sed -i '/<\/head>/i <script src="emby-crx/main.js"></script>' index.html
-}
-
-[ "$INSTALL_DANMAKU" = true ] && {
-    sed -i '/<\/head>/i <script src="dd-danmaku/ede.js"></script>' index.html
-}
-
-# 在 </body> 之前注入播放器和结束标签
-if [ "$INSTALL_PLAYER" = true ]; then
-    if grep -q "apploader.js" index.html; then
-        sed -i '/apploader.js/a <script src="externalPlayer.js" defer></script>' index.html
-    else
-        sed -i '/<\/body>/i <script src="externalPlayer.js" defer></script>' index.html
-    fi
+if [ "$INSTALL_CRX" = true ]; then
+    cat >> "$HEAD_INJECT_FILE" << 'EOF'
+<link rel="stylesheet" id="theme-css" href="emby-crx/style.css" type="text/css" media="all" />
+<script src="emby-crx/common-utils.js"></script>
+<script src="emby-crx/jquery-3.6.0.min.js"></script>
+<script src="emby-crx/md5.min.js"></script>
+<script src="emby-crx/main.js"></script>
+EOF
 fi
-sed -i '/<\/body>/i <!-- Emby Plugins End -->' index.html
+
+if [ "$INSTALL_DANMAKU" = true ]; then
+    echo '<script src="dd-danmaku/ede.js"></script>' >> "$HEAD_INJECT_FILE"
+fi
+
+# 构建 </body> 前需要注入的内容（写入临时文件）
+BODY_INJECT_FILE=$(mktemp)
+
+if [ "$INSTALL_PLAYER" = true ]; then
+    echo '<script src="externalPlayer.js" defer></script>' >> "$BODY_INJECT_FILE"
+fi
+echo '<!-- Emby Plugins End -->' >> "$BODY_INJECT_FILE"
+
+# 使用 awk 进行注入（BusyBox/Alpine 完全兼容）
+# 在 </head> 前插入 HEAD_INJECT_FILE 的内容
+awk -v inject="$(cat "$HEAD_INJECT_FILE")" '
+    /<\/head>/ { print inject }
+    { print }
+' index.html > index.html.tmp && mv index.html.tmp index.html
+
+# 在 </body> 前插入 BODY_INJECT_FILE 的内容
+awk -v inject="$(cat "$BODY_INJECT_FILE")" '
+    /<\/body>/ { print inject }
+    { print }
+' index.html > index.html.tmp && mv index.html.tmp index.html
+
+# 清理临时文件
+rm -f "$HEAD_INJECT_FILE" "$BODY_INJECT_FILE"
 
 echo -e "${GREEN}==============================================${NC}"
 echo -e "${GREEN}安装成功！请刷新网页查看。${NC}"
