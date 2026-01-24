@@ -142,53 +142,31 @@ sed -i '/dd-danmaku/d' index.html
 sed -i '/externalPlayer.js/d' index.html
 sed -i '/Emby Plugins/d' index.html
 
-# 构建 </head> 前需要注入的内容（写入临时文件）
-HEAD_INJECT_FILE=$(mktemp)
-echo '<!-- Emby Plugins Start -->' > "$HEAD_INJECT_FILE"
+# 使用 sed 替换方式注入（与手动安装文档一致的验证过的方法）
+# 读取整个文件到变量
+CONTENT=$(cat index.html)
 
-if [ "$INSTALL_CRX" = true ]; then
-    cat >> "$HEAD_INJECT_FILE" << 'EOF'
-<link rel="stylesheet" id="theme-css" href="emby-crx/style.css" type="text/css" media="all" />
-<script src="emby-crx/common-utils.js"></script>
-<script src="emby-crx/jquery-3.6.0.min.js"></script>
-<script src="emby-crx/md5.min.js"></script>
-<script src="emby-crx/main.js"></script>
-EOF
-fi
+# 构建 </head> 前要插入的代码
+HEAD_CODE='<!-- Emby Plugins Start -->'
+[ "$INSTALL_CRX" = true ] && HEAD_CODE="${HEAD_CODE}
+<link rel=\"stylesheet\" id=\"theme-css\" href=\"emby-crx/style.css\" type=\"text/css\" media=\"all\" />
+<script src=\"emby-crx/common-utils.js\"></script>
+<script src=\"emby-crx/jquery-3.6.0.min.js\"></script>
+<script src=\"emby-crx/md5.min.js\"></script>
+<script src=\"emby-crx/main.js\"></script>"
+[ "$INSTALL_DANMAKU" = true ] && HEAD_CODE="${HEAD_CODE}
+<script src=\"dd-danmaku/ede.js\"></script>"
 
-if [ "$INSTALL_DANMAKU" = true ]; then
-    echo '<script src="dd-danmaku/ede.js"></script>' >> "$HEAD_INJECT_FILE"
-fi
+# 构建 </body> 前要插入的代码
+BODY_CODE=""
+[ "$INSTALL_PLAYER" = true ] && BODY_CODE='<script src="externalPlayer.js" defer></script>'
+BODY_CODE="${BODY_CODE}
+<!-- Emby Plugins End -->"
 
-# 构建 </body> 前需要注入的内容（写入临时文件）
-BODY_INJECT_FILE=$(mktemp)
+# 替换并写回（使用 sed 管道处理，兼容所有环境）
+echo "$CONTENT" | sed "s|</head>|${HEAD_CODE}</head>|" | sed "s|</body>|${BODY_CODE}</body>|" > index.html
 
-if [ "$INSTALL_PLAYER" = true ]; then
-    echo '<script src="externalPlayer.js" defer></script>' >> "$BODY_INJECT_FILE"
-fi
-echo '<!-- Emby Plugins End -->' >> "$BODY_INJECT_FILE"
-
-# 使用 awk 进行注入（BusyBox/Alpine 完全兼容）
-# 在 </head> 前插入 HEAD_INJECT_FILE 的内容
-awk -v injectfile="$HEAD_INJECT_FILE" '
-    /<\/head>/ {
-        while ((getline line < injectfile) > 0) print line
-        close(injectfile)
-    }
-    { print }
-' index.html > index.html.tmp && mv index.html.tmp index.html
-
-# 在 </body> 前插入 BODY_INJECT_FILE 的内容
-awk -v injectfile="$BODY_INJECT_FILE" '
-    /<\/body>/ {
-        while ((getline line < injectfile) > 0) print line
-        close(injectfile)
-    }
-    { print }
-' index.html > index.html.tmp && mv index.html.tmp index.html
-
-# 清理临时文件
-rm -f "$HEAD_INJECT_FILE" "$BODY_INJECT_FILE"
+echo -e "${GREEN}注入完成！${NC}"
 
 echo -e "${GREEN}==============================================${NC}"
 echo -e "${GREEN}安装成功！请刷新网页查看。${NC}"
