@@ -8,15 +8,16 @@
 通过本仓库提供的 `install_plugins.sh` 脚本，您可以一键完成所有插件的安装。
 
 #### 安装步骤：
-1. **一键执行（推荐）**:
+1. **一键执行**:
+默认在docker根目录路径下执行，如需设置其他路径下的安装，请参考下方手动部署进行安装。
    ```bash
-   wget -q https://raw.githubusercontent.com/xueayi/Emby-Plugin-Quick-Deployment/main/install_plugins.sh -O install_plugins.sh && chmod +x install_plugins.sh && sudo ./install_plugins.sh
+   wget -q https://raw.githubusercontent.com/xueayi/Emby-Plugin-Quick-Deployment/refs/heads/master/install_plugins.sh -O install_plugins.sh && chmod +x install_plugins.sh && sudo ./install_plugins.sh
    ```
 2. **手动部署**:
    * 将 `install_plugins.sh` 上传到 Emby 服务器。
    * 修改脚本中的 `UI_DIR` 路径（默认为 `/system/dashboard-ui`）。
    * 执行脚本：`chmod +x install_plugins.sh && sudo ./install_plugins.sh`
-4. 刷新 Emby 网页端即可看到效果。
+3. 刷新 Emby 网页端即可看到效果。
 
 > [!IMPORTANT]
 > **外部播放器正常使用的三个核心条件：**
