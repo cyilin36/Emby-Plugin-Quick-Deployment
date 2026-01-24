@@ -74,6 +74,28 @@ if [ "$INSTALL_CRX" = false ] && [ "$INSTALL_DANMAKU" = false ] && [ "$INSTALL_P
     exit 0
 fi
 
+# 3.1 选择下载镜像源
+echo -e "\n${YELLOW}请选择下载源 (国内用户建议选择镜像):${NC}"
+echo -e "  [1] GitHub 直连 (海外/代理用户)"
+echo -e "  [2] ghproxy.net 镜像 ${GREEN}(推荐)${NC}"
+echo -e "  [3] mirror.ghproxy.com 镜像"
+read -p "您的选择 [1/2/3] (默认 2): " mirror_choice
+
+case "$mirror_choice" in
+    1)
+        GITHUB_RAW="https://raw.githubusercontent.com"
+        echo -e "${GREEN}已选择: GitHub 直连${NC}"
+        ;;
+    3)
+        GITHUB_RAW="https://mirror.ghproxy.com/https://raw.githubusercontent.com"
+        echo -e "${GREEN}已选择: mirror.ghproxy.com 镜像${NC}"
+        ;;
+    *)
+        GITHUB_RAW="https://ghproxy.net/https://raw.githubusercontent.com"
+        echo -e "${GREEN}已选择: ghproxy.net 镜像 (默认)${NC}"
+        ;;
+esac
+
 # 4. 备份处理 (增加 index.html 内容校验)
 if [ ! -f "index.html" ]; then
     echo -e "${RED}严重错误：找不到 index.html。${NC}"
@@ -92,23 +114,23 @@ else
 fi
 
 # 5. 下载资源
-echo -e "${GREEN}正在准备插件资源...${NC}"
+echo -e "${GREEN}正在准备插件资源 (使用 $GITHUB_RAW)...${NC}"
 if [ "$INSTALL_CRX" = true ]; then
     rm -rf emby-crx && mkdir -p emby-crx
-    wget -q https://raw.githubusercontent.com/Nolovenodie/emby-crx/master/static/css/style.css -P emby-crx/
-    wget -q https://raw.githubusercontent.com/Nolovenodie/emby-crx/master/static/js/common-utils.js -P emby-crx/
-    wget -q https://raw.githubusercontent.com/Nolovenodie/emby-crx/master/static/js/jquery-3.6.0.min.js -P emby-crx/
-    wget -q https://raw.githubusercontent.com/Nolovenodie/emby-crx/master/static/js/md5.min.js -P emby-crx/
-    wget -q https://raw.githubusercontent.com/Nolovenodie/emby-crx/master/content/main.js -P emby-crx/
+    wget -q "${GITHUB_RAW}/Nolovenodie/emby-crx/master/static/css/style.css" -P emby-crx/
+    wget -q "${GITHUB_RAW}/Nolovenodie/emby-crx/master/static/js/common-utils.js" -P emby-crx/
+    wget -q "${GITHUB_RAW}/Nolovenodie/emby-crx/master/static/js/jquery-3.6.0.min.js" -P emby-crx/
+    wget -q "${GITHUB_RAW}/Nolovenodie/emby-crx/master/static/js/md5.min.js" -P emby-crx/
+    wget -q "${GITHUB_RAW}/Nolovenodie/emby-crx/master/content/main.js" -P emby-crx/
 fi
 
 if [ "$INSTALL_DANMAKU" = true ]; then
     rm -rf dd-danmaku && mkdir -p dd-danmaku
-    wget -q https://raw.githubusercontent.com/chen3861229/dd-danmaku/refs/heads/main/ede.js -P dd-danmaku/
+    wget -q "${GITHUB_RAW}/chen3861229/dd-danmaku/refs/heads/main/ede.js" -P dd-danmaku/
 fi
 
 if [ "$INSTALL_PLAYER" = true ]; then
-    wget -q https://raw.githubusercontent.com/bpking1/embyExternalUrl/refs/heads/main/embyWebAddExternalUrl/embyLaunchPotplayer.js -O externalPlayer.js
+    wget -q "${GITHUB_RAW}/bpking1/embyExternalUrl/refs/heads/main/embyWebAddExternalUrl/embyLaunchPotplayer.js" -O externalPlayer.js
 fi
 
 # 6. 修改 index.html (采用分行安全注入)
