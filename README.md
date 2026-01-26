@@ -16,7 +16,7 @@
    ```
 1. **手动部署**:
    * 将 `install_plugins.sh` 上传到 Emby 服务器。
-   * 修改脚本中的 `UI_DIR` 路径（默认为 `/system/dashboard-ui`）。
+   * 修改脚本中的 `UI_DIR` 路径（默认为脚本位置在docker版emby的根目录，因此index.html的路径为 `./system/dashboard-ui`）。
    * 执行脚本：`chmod +x install_plugins.sh && ./install_plugins.sh`
 2. 刷新 Emby 网页端即可看到效果。
 3. 如果您不想安装全部插件，可以参考[emby插件手动安装方法和说明.md](emby插件手动安装方法和说明.md)
