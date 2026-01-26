@@ -380,88 +380,52 @@ install_plugin() {
         return 1
     fi
     
-    # 注入代码到 index.html (使用 sed 替换方式，与手动安装文档一致)
+    # 注入代码到 index.html
+    # 根据不同插件使用专用的注入逻辑
     local index_path="$UI_DIR/$INDEX_FILE"
     
-    if [ -n "$inject_head" ]; then
-        log "DEBUG" "注入 HEAD 代码..."
-        
-        # 读取当前文件内容
-        local content=$(cat "$index_path")
-        
-        # 构建注入代码块（单行格式，使用实际换行分隔）
-        local code_block="<!-- ${marker} start -->"
-        
-        # 逐行添加注入内容（处理 \n 分隔的多行）
-        local IFS_OLD="$IFS"
-        # 先将 \n 替换为实际换行符
-        local inject_lines=$(printf '%b' "$inject_head")
-        IFS='
-'
-        for line in $inject_lines; do
-            code_block="${code_block}
-${line}"
-        done
-        IFS="$IFS_OLD"
-        
-        code_block="${code_block}
-<!-- ${marker} end -->"
-        
-        log "DEBUG" "注入代码块内容:"
-        echo "$code_block" >> "$LOG_FILE"
-        
-        # 使用 sed 在 </head> 前插入 (替换方式)
-        # 注意: 使用 | 作为分隔符避免 / 冲突
-        local new_content=$(echo "$content" | sed "s|</head>|${code_block}</head>|")
-        
-        # 写回文件
-        echo "$new_content" > "$index_path"
-        
-        log "DEBUG" "HEAD 注入完成"
-    fi
+    # 先备份当前状态以防失败
+    cp "$index_path" "${index_path}.inject_backup"
     
-    if [ -n "$inject_body" ]; then
-        log "DEBUG" "注入 BODY 代码..."
-        
-        # 读取当前文件内容
-        local content=$(cat "$index_path")
-        
-        # 构建注入代码块
-        local code_block="<!-- ${marker} start -->
-$(printf '%b' "$inject_body")
-<!-- ${marker} end -->"
-        
-        # 查找插入位置
-        if grep -q "apploader.js" "$index_path"; then
-            # 在 apploader.js 那行后面添加
-            # 先找到包含 apploader.js 的完整行
-            local apploader_line=$(grep "apploader.js" "$index_path" | head -1)
-            log "DEBUG" "找到 apploader.js 行: $apploader_line"
-            
-            # 替换该行为: 原行 + 换行 + 注入代码
-            local escaped_line=$(echo "$apploader_line" | sed 's/[[\.*^$()+?{|]/\\&/g')
-            new_content=$(echo "$content" | sed "s|${apploader_line}|${apploader_line}
-${code_block}|")
-        else
-            # 在 </body> 前插入
-            new_content=$(echo "$content" | sed "s|</body>|${code_block}</body>|")
-        fi
-        
-        # 写回文件
-        echo "$new_content" > "$index_path"
-        
-        log "DEBUG" "BODY 注入完成"
-    fi
+    case "$plugin_id" in
+        crx)
+            # 界面美化插件 - 注入到 </head> 前
+            log "DEBUG" "注入 emby-crx 代码..."
+            # 使用 sed 单行替换（所有代码放一行）
+            sed -i 's|</head>|<!-- emby-crx start --><link rel="stylesheet" href="emby-crx/style.css" type="text/css" /><script src="emby-crx/jquery-3.6.0.min.js"></script><script src="emby-crx/md5.min.js"></script><script src="emby-crx/common-utils.js"></script><script src="emby-crx/main.js"></script><!-- emby-crx end --></head>|' "$index_path"
+            ;;
+        danmaku)
+            # 弹幕插件 - 注入到 </head> 前
+            log "DEBUG" "注入 dd-danmaku 代码..."
+            sed -i 's|</head>|<!-- dd-danmaku start --><script src="dd-danmaku/ede.js"></script><!-- dd-danmaku end --></head>|' "$index_path"
+            ;;
+        player)
+            # 外部播放器 - 注入到 apploader.js 后或 </body> 前
+            log "DEBUG" "注入 externalPlayer 代码..."
+            if grep -q "apploader.js" "$index_path"; then
+                # 在包含 apploader.js 的行后添加
+                sed -i '/apploader.js/a <!-- externalPlayer.js start --><script src="externalPlayer.js" defer></script><!-- externalPlayer.js end -->' "$index_path"
+            else
+                # 在 </body> 前添加
+                sed -i 's|</body>|<!-- externalPlayer.js start --><script src="externalPlayer.js" defer></script><!-- externalPlayer.js end --></body>|' "$index_path"
+            fi
+            ;;
+        *)
+            log "ERROR" "未知插件ID: $plugin_id"
+            rm -f "${index_path}.inject_backup"
+            return 1
+            ;;
+    esac
     
     # 验证注入结果
     if grep -q "$marker" "$index_path"; then
         print_success "$name 安装完成"
         log "INFO" "安装插件成功: $name"
+        rm -f "${index_path}.inject_backup"
     else
-        print_error "$name 安装可能未成功，请检查 index.html"
-        log "ERROR" "安装验证失败: $name - 未找到标记 $marker"
-        log "DEBUG" "当前 index.html 前50行:"
-        head -50 "$index_path" >> "$LOG_FILE"
+        print_error "$name 安装失败，正在恢复..."
+        mv "${index_path}.inject_backup" "$index_path"
+        log "ERROR" "安装验证失败: $name - 未找到标记 $marker，已恢复"
     fi
     
     return 0
