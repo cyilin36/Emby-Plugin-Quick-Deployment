@@ -71,4 +71,4 @@
 *   **Q: 为什么点击播放器图标没反应？**
     *   A: 99% 的情况是本地没有安装对应的“协议处理器”。对于 MPV 请检查 mpv-handler ；对于 PotPlayer 请直接重置/重装官方最新版。
 *   **Q: 安装后 index.html 报错或显示异常？**
-    *   A: 脚本在修改前已创建 `index.html.bak`。您可以执行 `mv index.html.bak index.html` 恢复初始状态。
+    *   A: 脚本会自动备份。您可以重新运行脚本，进入 `3) 备份管理` -> `3) 恢复备份` 选择一个历史版本恢复；或从 UI 目录下的 `.plugin_backups/index.html.original` 手动恢复。
