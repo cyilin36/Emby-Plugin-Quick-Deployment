@@ -329,6 +329,9 @@ install_plugin() {
     local marker=$(get_plugin_attr "$plugin_id" "MARKER")
     
     print_info "正在安装: $name"
+    log "DEBUG" "开始安装插件: $plugin_id"
+    log "DEBUG" "inject_head: $inject_head"
+    log "DEBUG" "inject_body: $inject_body"
     
     # 检查是否已安装
     if is_plugin_installed "$plugin_id"; then
@@ -340,6 +343,7 @@ install_plugin() {
     if [ -n "$dir" ]; then
         rm -rf "$UI_DIR/$dir" 2>/dev/null
         mkdir -p "$UI_DIR/$dir"
+        log "DEBUG" "创建目录: $UI_DIR/$dir"
     fi
     
     # 下载文件
@@ -363,8 +367,10 @@ install_plugin() {
         printf "  下载 $filename ... "
         if download_file "$url" "$output"; then
             printf "${GREEN}成功${NC}\n"
+            log "DEBUG" "下载成功: $output"
         else
             printf "${RED}失败${NC}\n"
+            log "ERROR" "下载失败: $url"
             download_failed=1
         fi
     done
@@ -375,28 +381,94 @@ install_plugin() {
     fi
     
     # 注入代码到 index.html
+    local index_path="$UI_DIR/$INDEX_FILE"
+    local tmp_file="/tmp/index_inject_$$.tmp"
+    
     if [ -n "$inject_head" ]; then
-        # 在 </head> 前注入
-        local escaped=$(printf '%s' "$inject_head" | sed 's/[&/\]/\\&/g')
-        sed -i "/<\/head>/i <!-- $marker start -->" "$UI_DIR/$INDEX_FILE"
-        # 使用 printf 处理 \n
-        printf '%s\n' "$inject_head" | while IFS= read -r line; do
-            sed -i "/<\/head>/i $line" "$UI_DIR/$INDEX_FILE"
-        done
-        sed -i "/<\/head>/i <!-- $marker end -->" "$UI_DIR/$INDEX_FILE"
+        log "DEBUG" "注入 HEAD 代码..."
+        # 构建要注入的完整内容块
+        {
+            echo "<!-- $marker start -->"
+            # 使用 echo -e 处理 \n 转义
+            echo "$inject_head" | sed 's/\\n/\n/g'
+            echo "<!-- $marker end -->"
+        } > "$tmp_file"
+        
+        # 用 awk 在 </head> 前插入内容
+        awk -v insert_file="$tmp_file" '
+        /<\/head>/ {
+            while ((getline line < insert_file) > 0) {
+                print line
+            }
+            close(insert_file)
+        }
+        { print }
+        ' "$index_path" > "${index_path}.new"
+        
+        if [ -s "${index_path}.new" ]; then
+            mv "${index_path}.new" "$index_path"
+            log "DEBUG" "HEAD 注入完成"
+        else
+            log "ERROR" "HEAD 注入失败 - 新文件为空"
+            rm -f "${index_path}.new"
+        fi
+        rm -f "$tmp_file"
     fi
     
     if [ -n "$inject_body" ]; then
-        # 在 apploader.js 后或 </body> 前注入
-        if grep -q "apploader.js" "$UI_DIR/$INDEX_FILE"; then
-            sed -i "/apploader.js/a <!-- $marker start -->\n$inject_body\n<!-- $marker end -->" "$UI_DIR/$INDEX_FILE"
+        log "DEBUG" "注入 BODY 代码..."
+        # 构建要注入的完整内容块
+        {
+            echo "<!-- $marker start -->"
+            echo "$inject_body" | sed 's/\\n/\n/g'
+            echo "<!-- $marker end -->"
+        } > "$tmp_file"
+        
+        # 查找 apploader.js 行或 </body> 行
+        if grep -q "apploader.js" "$index_path"; then
+            # 在 apploader.js 行后插入
+            awk -v insert_file="$tmp_file" '
+            { print }
+            /apploader\.js/ && !done {
+                while ((getline line < insert_file) > 0) {
+                    print line
+                }
+                close(insert_file)
+                done = 1
+            }
+            ' "$index_path" > "${index_path}.new"
         else
-            sed -i "/<\/body>/i <!-- $marker start -->\n$inject_body\n<!-- $marker end -->" "$UI_DIR/$INDEX_FILE"
+            # 在 </body> 前插入
+            awk -v insert_file="$tmp_file" '
+            /<\/body>/ {
+                while ((getline line < insert_file) > 0) {
+                    print line
+                }
+                close(insert_file)
+            }
+            { print }
+            ' "$index_path" > "${index_path}.new"
         fi
+        
+        if [ -s "${index_path}.new" ]; then
+            mv "${index_path}.new" "$index_path"
+            log "DEBUG" "BODY 注入完成"
+        else
+            log "ERROR" "BODY 注入失败 - 新文件为空"
+            rm -f "${index_path}.new"
+        fi
+        rm -f "$tmp_file"
     fi
     
-    print_success "$name 安装完成"
-    log "INFO" "安装插件: $name"
+    # 验证注入结果
+    if grep -q "$marker" "$index_path"; then
+        print_success "$name 安装完成"
+        log "INFO" "安装插件成功: $name"
+    else
+        print_error "$name 安装可能未成功，请检查 index.html"
+        log "ERROR" "安装验证失败: $name - 未找到标记 $marker"
+    fi
+    
     return 0
 }
 
