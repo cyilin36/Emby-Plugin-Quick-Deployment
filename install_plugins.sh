@@ -10,6 +10,7 @@
 
 # ========================== 全局配置 ==========================
 
+# 默认路径
 VERSION="1.0.0"
 UI_DIR="/system/dashboard-ui"
 BACKUP_DIR="/system/dashboard-ui/.plugin_backups"
@@ -143,6 +144,25 @@ download_file() {
 
 # ========================== 环境检测 ==========================
 
+# 配置自定义路径
+configure_custom_path() {
+    echo ""
+    print_info "当前 UI 目录: $UI_DIR"
+    printf "\n是否使用自定义路径? (y/N): "
+    read use_custom
+    
+    if [ "$use_custom" = "y" ] || [ "$use_custom" = "Y" ]; then
+        printf "请输入 index.html 所在目录的绝对路径: "
+        read custom_path
+        
+        if [ -n "$custom_path" ]; then
+            UI_DIR="$custom_path"
+            BACKUP_DIR="${custom_path}/.plugin_backups"
+            print_success "已设置自定义路径: $UI_DIR"
+        fi
+    fi
+}
+
 check_environment() {
     print_info "检测运行环境..."
     
@@ -150,7 +170,7 @@ check_environment() {
     if [ ! -d "$UI_DIR" ]; then
         print_error "未找到 Emby UI 目录: $UI_DIR"
         print_info "请确保在 Emby Docker 容器根目录运行此脚本"
-        print_info "或修改脚本开头的 UI_DIR 变量"
+        print_info "或使用 --ui-dir 参数指定路径"
         return 1
     fi
     
@@ -173,6 +193,7 @@ check_environment() {
     fi
     
     print_success "环境检测通过"
+    print_info "UI 目录: $UI_DIR"
     return 0
 }
 
@@ -655,16 +676,25 @@ main_menu() {
         echo "  1) 安装插件"
         echo "  2) 卸载插件"
         echo "  3) 备份管理"
-        echo "  4) 帮助说明"
+        echo "  4) 设置路径"
+        echo "  5) 帮助说明"
         echo "  q) 退出"
-        printf "\n请选择 [1-4/q]: "
+        printf "\n请选择 [1-5/q]: "
         read choice
         
         case "$choice" in
             1) install_menu ;;
             2) uninstall_menu ;;
             3) backup_menu ;;
-            4) show_help ;;
+            4) 
+                configure_custom_path
+                if ! check_environment; then
+                    print_error "路径配置无效，已恢复默认设置"
+                    UI_DIR="/system/dashboard-ui"
+                    BACKUP_DIR="/system/dashboard-ui/.plugin_backups"
+                fi
+                ;;
+            5) show_help ;;
             q|Q) 
                 echo ""
                 print_info "感谢使用，再见！"
@@ -683,12 +713,13 @@ show_usage() {
     echo "用法: $0 [选项]"
     echo ""
     echo "选项:"
-    echo "  -h, --help      显示帮助信息"
-    echo "  -v, --version   显示版本信息"
-    echo "  -s, --status    显示插件状态"
-    echo "  --install-all   非交互式安装全部插件"
-    echo "  --uninstall-all 非交互式卸载全部插件"
-    echo "  --use-mirror    使用国内加速源"
+    echo "  -h, --help           显示帮助信息"
+    echo "  -v, --version        显示版本信息"
+    echo "  -s, --status         显示插件状态"
+    echo "  --ui-dir <路径>      指定 index.html 所在目录的绝对路径"
+    echo "  --install-all        非交互式安装全部插件"
+    echo "  --uninstall-all      非交互式卸载全部插件"
+    echo "  --use-mirror         使用国内加速源"
     echo ""
     echo "交互式运行: $0"
 }
@@ -716,6 +747,18 @@ main() {
                 cd "$UI_DIR" || exit 1
                 show_plugin_status
                 exit 0
+                ;;
+            --ui-dir)
+                shift
+                if [ -n "$1" ]; then
+                    UI_DIR="$1"
+                    BACKUP_DIR="${1}/.plugin_backups"
+                    print_info "使用自定义路径: $UI_DIR"
+                else
+                    print_error "--ui-dir 需要指定路径参数"
+                    exit 1
+                fi
+                shift
                 ;;
             --use-mirror)
                 CURRENT_SOURCE="mirror"
