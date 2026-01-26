@@ -382,82 +382,102 @@ install_plugin() {
     
     # 注入代码到 index.html
     local index_path="$UI_DIR/$INDEX_FILE"
-    local tmp_file="/tmp/index_inject_$$.tmp"
+    local tmp_inject="/tmp/inject_content_$$.tmp"
+    local tmp_head="/tmp/head_part_$$.tmp"
+    local tmp_tail="/tmp/tail_part_$$.tmp"
     
     if [ -n "$inject_head" ]; then
         log "DEBUG" "注入 HEAD 代码..."
-        # 构建要注入的完整内容块
+        
+        # 使用 printf %b 正确处理 \n 转义序列
         {
             echo "<!-- $marker start -->"
-            # 使用 echo -e 处理 \n 转义
-            echo "$inject_head" | sed 's/\\n/\n/g'
+            printf '%b\n' "$inject_head"
             echo "<!-- $marker end -->"
-        } > "$tmp_file"
+        } > "$tmp_inject"
         
-        # 用 awk 在 </head> 前插入内容
-        awk -v insert_file="$tmp_file" '
-        /<\/head>/ {
-            while ((getline line < insert_file) > 0) {
-                print line
-            }
-            close(insert_file)
-        }
-        { print }
-        ' "$index_path" > "${index_path}.new"
+        log "DEBUG" "注入内容已写入临时文件，内容如下:"
+        cat "$tmp_inject" >> "$LOG_FILE"
         
-        if [ -s "${index_path}.new" ]; then
-            mv "${index_path}.new" "$index_path"
-            log "DEBUG" "HEAD 注入完成"
+        # 获取 </head> 行号
+        local head_line=$(grep -n '</head>' "$index_path" | head -1 | cut -d: -f1)
+        
+        if [ -n "$head_line" ]; then
+            log "DEBUG" "找到 </head> 在第 $head_line 行"
+            
+            # 分割文件：head_line 之前的部分 + 注入内容 + head_line 及之后的部分
+            local before_line=$((head_line - 1))
+            
+            if [ "$before_line" -gt 0 ]; then
+                head -n "$before_line" "$index_path" > "$tmp_head"
+            else
+                : > "$tmp_head"
+            fi
+            
+            tail -n "+$head_line" "$index_path" > "$tmp_tail"
+            
+            # 拼接
+            cat "$tmp_head" "$tmp_inject" "$tmp_tail" > "${index_path}.new"
+            
+            if [ -s "${index_path}.new" ]; then
+                mv "${index_path}.new" "$index_path"
+                log "DEBUG" "HEAD 注入完成"
+            else
+                log "ERROR" "HEAD 注入失败 - 新文件为空"
+                rm -f "${index_path}.new"
+            fi
         else
-            log "ERROR" "HEAD 注入失败 - 新文件为空"
-            rm -f "${index_path}.new"
+            log "ERROR" "未找到 </head> 标签"
         fi
-        rm -f "$tmp_file"
+        
+        rm -f "$tmp_inject" "$tmp_head" "$tmp_tail"
     fi
     
     if [ -n "$inject_body" ]; then
         log "DEBUG" "注入 BODY 代码..."
-        # 构建要注入的完整内容块
+        
+        # 使用 printf %b 正确处理 \n 转义序列
         {
             echo "<!-- $marker start -->"
-            echo "$inject_body" | sed 's/\\n/\n/g'
+            printf '%b\n' "$inject_body"
             echo "<!-- $marker end -->"
-        } > "$tmp_file"
+        } > "$tmp_inject"
         
         # 查找 apploader.js 行或 </body> 行
+        local inject_after_line=""
+        
         if grep -q "apploader.js" "$index_path"; then
             # 在 apploader.js 行后插入
-            awk -v insert_file="$tmp_file" '
-            { print }
-            /apploader\.js/ && !done {
-                while ((getline line < insert_file) > 0) {
-                    print line
-                }
-                close(insert_file)
-                done = 1
-            }
-            ' "$index_path" > "${index_path}.new"
+            inject_after_line=$(grep -n "apploader.js" "$index_path" | head -1 | cut -d: -f1)
+            log "DEBUG" "找到 apploader.js 在第 $inject_after_line 行，将在其后插入"
         else
-            # 在 </body> 前插入
-            awk -v insert_file="$tmp_file" '
-            /<\/body>/ {
-                while ((getline line < insert_file) > 0) {
-                    print line
-                }
-                close(insert_file)
-            }
-            { print }
-            ' "$index_path" > "${index_path}.new"
+            # 在 </body> 前插入，即 </body> 行之前
+            local body_line=$(grep -n '</body>' "$index_path" | head -1 | cut -d: -f1)
+            if [ -n "$body_line" ]; then
+                inject_after_line=$((body_line - 1))
+                log "DEBUG" "找到 </body> 在第 $body_line 行，将在其前插入"
+            fi
         fi
         
-        if [ -s "${index_path}.new" ]; then
-            mv "${index_path}.new" "$index_path"
-            log "DEBUG" "BODY 注入完成"
+        if [ -n "$inject_after_line" ]; then
+            # 分割并拼接
+            head -n "$inject_after_line" "$index_path" > "$tmp_head"
+            tail -n "+$((inject_after_line + 1))" "$index_path" > "$tmp_tail"
+            
+            cat "$tmp_head" "$tmp_inject" "$tmp_tail" > "${index_path}.new"
+            
+            if [ -s "${index_path}.new" ]; then
+                mv "${index_path}.new" "$index_path"
+                log "DEBUG" "BODY 注入完成"
+            else
+                log "ERROR" "BODY 注入失败 - 新文件为空"
+                rm -f "${index_path}.new"
+            fi
         else
-            log "ERROR" "BODY 注入失败 - 新文件为空"
-            rm -f "${index_path}.new"
+            log "ERROR" "未找到合适的注入位置"
         fi
-        rm -f "$tmp_file"
+        
+        rm -f "$tmp_inject" "$tmp_head" "$tmp_tail"
     fi
     
     # 验证注入结果
@@ -467,6 +487,8 @@ install_plugin() {
     else
         print_error "$name 安装可能未成功，请检查 index.html"
         log "ERROR" "安装验证失败: $name - 未找到标记 $marker"
+        log "DEBUG" "当前 index.html 前30行:"
+        head -30 "$index_path" >> "$LOG_FILE"
     fi
     
     return 0
