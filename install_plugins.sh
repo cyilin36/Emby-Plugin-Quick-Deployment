@@ -539,7 +539,7 @@ select_source() {
 install_menu() {
     echo ""
     print_info "选择要安装的插件:"
-    echo "  1) 全部安装"
+    # echo "  1) 全部安装"
     echo "  2) 界面美化 (emby-crx)【Emby 4.8 可用】"
     echo "  3) 弹幕插件 (dd-danmaku)"
     echo "  4) 外部播放器 (PotPlayer/MPV)"
@@ -567,7 +567,7 @@ install_menu() {
     local install_swiper=0
     
     case "$choices" in
-        *1*) install_crx=1; install_danmaku=1; install_player=1; install_swiper=1 ;;
+        *1*) install_crx=0; install_danmaku=1; install_player=1; install_swiper=1 ;;
     esac
     case "$choices" in *2*) install_crx=1 ;; esac
     case "$choices" in *3*) install_danmaku=1 ;; esac
