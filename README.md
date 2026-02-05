@@ -44,6 +44,11 @@
 *   **功能**: 通过协议调用本地播放器，实现从浏览器一键唤起本地的高性能播放器。
 *   **项目地址**: [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)
 
+### 4. 界面美化（emby 4.9+ 版本推荐） (Emby Home Swiper)
+*   **功能**: 现代化全屏轮播横幅组件，自动展示最新和热门媒体内容。
+*   **项目地址**: [sohag1192/Emby-Home-Swiper-UI](https://github.com/sohag1192/Emby-Home-Swiper-UI)
+*   **版本要求**: **Emby 4.9.1.80 及以上版本**
+
 #### 客户端环境配置（必须）：
 要使网页端的“按钮”生效，您的本地电脑必须安装相应的关联程序：
 

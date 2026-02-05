@@ -67,8 +67,19 @@ PLUGIN_PLAYER_BASE_PATH="bpking1/embyExternalUrl/refs/heads/main"
 PLUGIN_PLAYER_INJECT_BODY='<script src="externalPlayer.js" defer></script>'
 PLUGIN_PLAYER_MARKER="externalPlayer.js"
 
+# --- 插件4: 首页轮播 (Emby Home Swiper UI) ---
+PLUGIN_SWIPER_ID="swiper"
+PLUGIN_SWIPER_NAME="首页轮播 (Emby Home Swiper)"
+PLUGIN_SWIPER_DESC="现代化全屏轮播横幅，展示最新媒体 (Emby 4.9+ 推荐)"
+PLUGIN_SWIPER_DIR=""
+PLUGIN_SWIPER_PROJECT="https://github.com/sohag1192/Emby-Home-Swiper-UI"
+PLUGIN_SWIPER_FILES="v1/home.js"
+PLUGIN_SWIPER_BASE_PATH="sohag1192/Emby-Home-Swiper-UI/refs/heads/main"
+PLUGIN_SWIPER_INJECT_HEAD='<script src="home.js"></script>'
+PLUGIN_SWIPER_MARKER="home.js"
+
 # 插件列表 (空格分隔的ID)
-PLUGIN_LIST="crx danmaku player"
+PLUGIN_LIST="crx danmaku player swiper"
 
 # ========================== 工具函数 ==========================
 
@@ -440,6 +451,15 @@ install_plugin() {
                 sed -i 's|</body>|<!-- externalPlayer.js start --><script src="externalPlayer.js" defer></script><!-- externalPlayer.js end --></body>|' "$index_path"
             fi
             ;;
+        swiper)
+            # 首页轮播插件 - 注入到 </head> 前或 <body 前
+            log "DEBUG" "注入 home.js 代码..."
+            if grep -q "</head>" "$index_path"; then
+                sed -i 's|</head>|<!-- home.js start --><script src="home.js"></script><!-- home.js end --></head>|' "$index_path"
+            else
+                sed -i 's|<body|<!-- home.js start --><script src="home.js"></script><!-- home.js end -->\n<body|' "$index_path"
+            fi
+            ;;
         *)
             log "ERROR" "未知插件ID: $plugin_id"
             rm -f "${index_path}.inject_backup"
@@ -520,9 +540,10 @@ install_menu() {
     echo ""
     print_info "选择要安装的插件:"
     echo "  1) 全部安装"
-    echo "  2) 界面美化 (emby-crx)"
+    echo "  2) 界面美化 (emby-crx)【Emby 4.8 可用】"
     echo "  3) 弹幕插件 (dd-danmaku)"
     echo "  4) 外部播放器 (PotPlayer/MPV)"
+    echo "  5) 界面美化 (Emby Home Swiper)【Emby 4.9+ 推荐】"
     echo "  q) 返回主菜单"
     printf "\n请选择 (可多选，如 234): "
     read choices
@@ -541,19 +562,22 @@ install_menu() {
     local install_crx=0
     local install_danmaku=0
     local install_player=0
+    local install_swiper=0
     
     case "$choices" in
-        *1*) install_crx=1; install_danmaku=1; install_player=1 ;;
+        *1*) install_crx=1; install_danmaku=1; install_player=1; install_swiper=1 ;;
     esac
     case "$choices" in *2*) install_crx=1 ;; esac
     case "$choices" in *3*) install_danmaku=1 ;; esac
     case "$choices" in *4*) install_player=1 ;; esac
+    case "$choices" in *5*) install_swiper=1 ;; esac
     
     # 执行安装
     echo ""
     [ "$install_crx" -eq 1 ] && install_plugin "crx"
     [ "$install_danmaku" -eq 1 ] && install_plugin "danmaku"
     [ "$install_player" -eq 1 ] && install_plugin "player"
+    [ "$install_swiper" -eq 1 ] && install_plugin "swiper"
     
     echo ""
     print_success "安装操作完成！刷新 Emby 网页即可生效。"
@@ -567,6 +591,7 @@ uninstall_menu() {
     echo "  2) 界面美化 (emby-crx)"
     echo "  3) 弹幕插件 (dd-danmaku)"
     echo "  4) 外部播放器 (PotPlayer/MPV)"
+    echo "  5) 首页轮播 (Emby Home Swiper)"
     echo "  q) 返回主菜单"
     printf "\n请选择 (可多选，如 234): "
     read choices
@@ -581,19 +606,22 @@ uninstall_menu() {
     local uninstall_crx=0
     local uninstall_danmaku=0
     local uninstall_player=0
+    local uninstall_swiper=0
     
     case "$choices" in
-        *1*) uninstall_crx=1; uninstall_danmaku=1; uninstall_player=1 ;;
+        *1*) uninstall_crx=1; uninstall_danmaku=1; uninstall_player=1; uninstall_swiper=1 ;;
     esac
     case "$choices" in *2*) uninstall_crx=1 ;; esac
     case "$choices" in *3*) uninstall_danmaku=1 ;; esac
     case "$choices" in *4*) uninstall_player=1 ;; esac
+    case "$choices" in *5*) uninstall_swiper=1 ;; esac
     
     # 执行卸载
     echo ""
     [ "$uninstall_crx" -eq 1 ] && uninstall_plugin "crx"
     [ "$uninstall_danmaku" -eq 1 ] && uninstall_plugin "danmaku"
     [ "$uninstall_player" -eq 1 ] && uninstall_plugin "player"
+    [ "$uninstall_swiper" -eq 1 ] && uninstall_plugin "swiper"
     
     echo ""
     print_success "卸载操作完成！刷新 Emby 网页即可生效。"
