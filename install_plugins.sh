@@ -539,11 +539,11 @@ select_source() {
 install_menu() {
     echo ""
     print_info "选择要安装的插件:"
-    # echo "  1) 全部安装"
+    echo "  1) 全部安装 (不包含2)"
     echo "  2) 界面美化 (emby-crx)【Emby 4.8 可用】"
     echo "  3) 弹幕插件 (dd-danmaku)"
     echo "  4) 外部播放器 (PotPlayer/MPV)"
-    echo "  5) 首页轮播 (Emby Home Swiper)【Emby 4.9+ 推荐】"
+    echo "  5) 首页轮播 (Emby Home Swiper)【Emby 4.9+ 可用】【Emby 4.8 可用】"
     echo ""
     print_warning "注意: 选项 2 和 5 互斥，建议只安装其一"
     echo "  q) 返回主菜单"
