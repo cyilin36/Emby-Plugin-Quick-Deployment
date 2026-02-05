@@ -543,7 +543,9 @@ install_menu() {
     echo "  2) 界面美化 (emby-crx)【Emby 4.8 可用】"
     echo "  3) 弹幕插件 (dd-danmaku)"
     echo "  4) 外部播放器 (PotPlayer/MPV)"
-    echo "  5) 界面美化 (Emby Home Swiper)【Emby 4.9+ 推荐】"
+    echo "  5) 首页轮播 (Emby Home Swiper)【Emby 4.9+ 推荐】"
+    echo ""
+    print_warning "注意: 选项 2 和 5 互斥，建议只安装其一"
     echo "  q) 返回主菜单"
     printf "\n请选择 (可多选，如 234): "
     read choices
@@ -571,6 +573,19 @@ install_menu() {
     case "$choices" in *3*) install_danmaku=1 ;; esac
     case "$choices" in *4*) install_player=1 ;; esac
     case "$choices" in *5*) install_swiper=1 ;; esac
+    
+    # 检测互斥插件
+    if [ "$install_crx" -eq 1 ] && [ "$install_swiper" -eq 1 ]; then
+        echo ""
+        print_warning "检测到同时选择了【界面美化】和【首页轮播】"
+        print_warning "这两个插件会修改首页布局，同时安装可能导致冲突"
+        printf "\n是否继续安装? (y/N): "
+        read confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+            print_info "已取消安装"
+            return
+        fi
+    fi
     
     # 执行安装
     echo ""
@@ -675,6 +690,7 @@ show_help() {
     echo "注意事项:"
     echo "  • 安装前会自动备份 index.html"
     echo "  • 可随时通过备份恢复到之前状态"
+    echo "  • 界面美化和首页轮播插件互斥，建议只安装其一"
     echo "  • 外部播放器需客户端安装协议处理器"
     echo "----------------------------------------"
 }

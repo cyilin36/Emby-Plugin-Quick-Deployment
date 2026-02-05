@@ -22,6 +22,13 @@
 1. 安装插件后刷新 Emby 网页端即可看到效果。
 2. 如果您不想使用一键执行脚本安装，可以参考[emby插件手动安装方法和说明.md](emby插件手动安装方法和说明.md)进行手动安装
 
+> [!WARNING]
+> **插件互斥说明：**
+> - **界面美化 (emby-crx)** 和 **首页轮播 (Emby Home Swiper)** 两个插件存在功能冲突
+> - **建议只安装其中一个**，避免出现样式错乱或功能异常
+> - Emby 4.8 及以下版本推荐使用 **界面美化 (emby-crx)**
+> - Emby 4.9+ 版本推荐使用 **首页轮播 (Emby Home Swiper)**
+
 > [!IMPORTANT]
 > **外部播放器正常使用的三个核心条件：**
 > 1. **后端（Server Side）**: emby服务器通过nginx的njs模块运行js脚本，在emby视频的外部链接处添加调用外部播放器链接，所有emby官方客户端可用。参考：[embyExternalUrl 原生部署方案](https://github.com/bpking1/embyExternalUrl/blob/main/README.zh-Hans.md)
@@ -44,7 +51,7 @@
 *   **功能**: 通过协议调用本地播放器，实现从浏览器一键唤起本地的高性能播放器。
 *   **项目地址**: [bpking1/embyExternalUrl](https://github.com/bpking1/embyExternalUrl)
 
-### 4. 界面美化（emby 4.9+ 版本推荐） (Emby Home Swiper)
+### 4. 首页轮播（emby 4.9+ 版本推荐） (Emby Home Swiper)
 *   **功能**: 现代化全屏轮播横幅组件，自动展示最新和热门媒体内容。
 *   **项目地址**: [sohag1192/Emby-Home-Swiper-UI](https://github.com/sohag1192/Emby-Home-Swiper-UI)
 *   **版本要求**: **Emby 4.9.1.80 及以上版本**
@@ -70,6 +77,8 @@
 
 ## 常见问题 (FAQ)
 
+*   **Q: 界面美化和首页轮播可以同时安装吗？**
+    *   A: **不建议同时安装**。这两个插件都会修改首页布局，同时使用可能导致样式冲突或功能异常。建议根据 Emby 版本选择：Emby 4.8 及以下使用界面美化，Emby 4.9+ 使用首页轮播。
 *   **Q: 为什么点击播放器图标没反应？**
     *   A: 99% 的情况是本地没有安装对应的“协议处理器”。对于 MPV 请检查 mpv-handler ；对于 PotPlayer 请直接重置/重装官方最新版。
 *   **Q: 安装后 index.html 报错或显示异常？**
