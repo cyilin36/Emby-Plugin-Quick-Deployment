@@ -22,7 +22,7 @@ Using the `install_plugins.sh` script provided in this repository, you can compl
 - Refresh the Emby web UI after installation to see the effects.
 
 1. Refresh the Emby web UI after installation to see the effects.
-2. If you do not want to use the one-click script, you can refer to [emby插件手动安装方法和说明.md](emby插件手动安装方法和说明.md) for manual installation instructions.
+2. If you do not want to use the one-click script, you can refer to [emby插件手动安装方法和说明_en.md](emby插件手动安装方法和说明_en.md) for manual installation instructions.
 
 > [!WARNING]
 > **Plugin Mutual Exclusion Notice:**
