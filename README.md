@@ -1,5 +1,7 @@
 # Emby 插件快速安装指南
 
+[English](README_EN.md) | [中文](README.md)
+
 本仓库提供了一套用于 Emby Server Web 端的插件集成一键安装方案，包括界面美化、弹幕支持以及外部播放器（PotPlayer/MPV）调用功能。这些功能实现来自于开源社区其他朋友的贡献，项目地址已附在下方对应位置。
 
 ![主界面](image/main.png)
