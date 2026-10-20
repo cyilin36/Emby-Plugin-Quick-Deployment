@@ -30,7 +30,7 @@ jobs:
           sh -n install_plugins.sh
           sh -n install_plugins_en.sh
       - name: PowerShell syntax
-        shell: ${{ matrix.powershell }}
+        shell: pwsh
         run: |
           foreach ($file in @('install_plugins.ps1', 'install_plugins_en.ps1')) {
             $tokens = $null
