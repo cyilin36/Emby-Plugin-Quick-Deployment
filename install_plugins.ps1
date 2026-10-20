@@ -1,13 +1,17 @@
 ﻿# ============================================================================
-# Emby 插件管理脚本 (Windows PowerShell 版) v1.0.0
+# Emby 插件管理脚本 (Windows PowerShell 版) v1.1.0
 #
-# 功能: 选择性安装/卸载插件、备份恢复、国内加速源
+# 功能: 选择性安装/卸载插件、备份恢复、国内加速源、指定插件命令行操作
 # 作者: xueayi
 # ============================================================================
 
 param(
     [string]$UiDir,
     [switch]$Status,
+    [Alias("Install")]
+    [string[]]$InstallIds,
+    [Alias("Uninstall")]
+    [string[]]$UninstallIds,
     [switch]$InstallAll,
     [switch]$UninstallAll,
     [switch]$UseMirror,
@@ -15,7 +19,7 @@ param(
     [switch]$ShowVersion
 )
 
-$VERSION = "1.0.0"
+$VERSION = "1.1.0"
 
 # ========================== 全局配置 ==========================
 
@@ -60,7 +64,7 @@ $PLUGINS = @{
         desc="全屏轮播横幅"
         dir=""
         base_path="sohag1192/Emby-Home-Swiper-UI/refs/heads/main"
-        files=@("v1/home.js")
+        files=@("home-swiper-v2/home-swiper.js")
         marker="home.js"
     }
 }
@@ -244,6 +248,56 @@ function Show-PluginStatus{
 
 # ========================== 核心引擎 ==========================
 
+# 校验并归一化插件 ID
+function Normalize-PluginIds{
+    param([string[]]$RawIds)
+
+    $result = @()
+    foreach($raw in $RawIds){
+        foreach($id in ($raw -split '[,\s]+')){
+            if(!$id){continue}
+            if($PLUGINS.ContainsKey($id)){
+                if($result -notcontains $id){$result += $id}
+            }else{
+                Print-ErrorMsg "未知插件 ID: $id (可用: $($PLUGIN_LIST -join ', '))"
+                return @()
+            }
+        }
+    }
+    return $result
+}
+
+# 非交互式安装指定插件
+function Install-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-OriginalBackup
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){
+        if(!(Install-Plugin $pluginId)){return $false}
+    }
+    Print-Success "指定插件安装完成! 刷新Emby网页即可生效."
+    return $true
+}
+
+# 非交互式卸载指定插件
+function Uninstall-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){Uninstall-Plugin $pluginId}
+    Print-Success "指定插件已卸载! 刷新Emby网页即可生效."
+    return $true
+}
+
 # 安装插件
 function Install-Plugin([string]$id){
     $p = $PLUGINS[$id]
@@ -257,6 +311,7 @@ function Install-Plugin([string]$id){
         $target = $dir
     }
     
+    $downloadFailed = $false
     foreach($f in $p.files){
         $name = [System.IO.Path]::GetFileName($f)
         if($id -eq "player"){$name = "externalPlayer.js"}
@@ -270,9 +325,12 @@ function Install-Plugin([string]$id){
             Write-Host "成功" -ForegroundColor Green
         }else{
             Write-Host "失败" -ForegroundColor Red
+            $downloadFailed = $true
         }
     }
     
+    if($downloadFailed){return $false}
+
     $c = Get-Content(Join-Path $script:UI_DIR "index.html")-Raw
     $mk = $p.marker
     
@@ -289,7 +347,7 @@ function Install-Plugin([string]$id){
         }elseif($id -eq "danmaku"){
             $inj = '<script src="dd-danmaku/ede.js"></script>'
         }elseif($id -eq "swiper"){
-            $inj = '<script src="home.js"></script>'
+            $inj = '<script src="home.js" defer></script>'
         }
         
         if($c -match "</head>"){
@@ -299,8 +357,11 @@ function Install-Plugin([string]$id){
         }
     }
     
+    if(!$c.Contains($inj)){Print-ErrorMsg "未找到可用的 HTML 注入位置";return $false}
+
     $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8
     Print-Success "$($p.name) 安装完成"
+    return $true
 }
 
 # 卸载插件
@@ -323,8 +384,14 @@ function Uninstall-Plugin([string]$id){
         }
     }
     
-    $c = Get-Content(Join-Path $script:UI_DIR "index.html")|Where-Object{$_ -notmatch $p.marker}
-    $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8
+    $c = Get-Content(Join-Path $script:UI_DIR "index.html") -Raw
+    $assetPattern = [regex]::Escape($p.marker)
+    if($p.dir){$assetPattern = [regex]::Escape($p.dir) + '/[^"'']+'}
+    $scriptPattern = '<script\b[^>]*\bsrc=["'']' + $assetPattern + '["''][^>]*>\s*</script>'
+    $stylePattern = '<link\b[^>]*\bhref=["'']' + $assetPattern + '["''][^>]*>'
+    $c = [regex]::Replace($c, $scriptPattern + '|' + $stylePattern, '', 'IgnoreCase')
+    $c = [regex]::Replace($c, '<!-- ' + [regex]::Escape($p.marker) + '(?: start| end)? -->', '')
+    $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8 -NoNewline
     Print-Success "$($p.name) 已卸载"
 }
 
@@ -353,6 +420,8 @@ function Show-Help{
     Print-Info "命令行选项:"
     Write-Host "  -UiDir <路径>     指定Emby dashboard-ui目录"
     Write-Host "  -Status           显示插件状态"
+    Write-Host "  -Install <ids>    安装指定插件 (逗号分隔, 如 danmaku,player)"
+    Write-Host "  -Uninstall <ids>  卸载指定插件"
     Write-Host "  -InstallAll       安装所有插件"
     Write-Host "  -UninstallAll     卸载所有插件"
     Write-Host "  -UseMirror        使用国内加速源(ghproxy.net)"
@@ -413,7 +482,7 @@ function Install-Menu{
         
         # Install
         Write-Host ""
-        foreach($pluginId in $todo){Install-Plugin $pluginId}
+        foreach($pluginId in $todo){Install-Plugin $pluginId | Out-Null}
         
         Write-Host ""
         Print-Success "安装完成! 刷新Emby网页即可生效."
@@ -527,13 +596,19 @@ function Main{
         Show-PluginStatus
         exit
     }
+
+    if($script:PSBoundParameters.ContainsKey("InstallIds")){
+        if(!(Install-Selected $InstallIds)){exit 1}
+        exit
+    }
+
+    if($script:PSBoundParameters.ContainsKey("UninstallIds")){
+        if(!(Uninstall-Selected $UninstallIds)){exit 1}
+        exit
+    }
     
     if($InstallAll){
-        Ensure-BackupDir
-        Create-OriginalBackup
-        Create-TimestampedBackup
-        foreach($i in $PLUGIN_LIST){Install-Plugin $i}
-        Print-Success "所有插件已安装"
+        if(!(Install-Selected $PLUGIN_LIST)){exit 1}
         exit
     }
     
