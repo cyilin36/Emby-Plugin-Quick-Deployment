@@ -195,6 +195,8 @@ configure_custom_path() {
         if [ -n "$custom_path" ]; then
             UI_DIR="$custom_path"
             BACKUP_DIR="${custom_path}/.plugin_backups"
+            UI_DIR_EXPLICIT=1
+            IS_FNOS_NATIVE=0
             print_success "Custom path set: $UI_DIR"
         fi
     fi
@@ -374,7 +376,8 @@ normalize_plugin_ids() {
         if [ "$ok" = "1" ]; then
             out="$out $id"
         else
-            print_error "Unknown plugin ID: $id (available: $PLUGIN_LIST)"
+            print_error "Unknown plugin ID: $id (available: $PLUGIN_LIST)" >&2
+            return 1
         fi
     done
     echo "$out"
@@ -382,7 +385,8 @@ normalize_plugin_ids() {
 
 # Non-interactive install of selected plugins
 install_selected() {
-    local ids=$(normalize_plugin_ids "$1")
+    local ids
+    ids=$(normalize_plugin_ids "$1") || return 1
     [ -z "$ids" ] && return 1
     if ! check_environment; then exit 1; fi
     cd "$UI_DIR" || exit 1
@@ -390,7 +394,7 @@ install_selected() {
     create_original_backup
     create_timestamped_backup
     for id in $ids; do
-        install_plugin "$id"
+        install_plugin "$id" || return 1
     done
     print_success "Selected plugins installed! Refresh the Emby web page to apply."
     print_fnos_upgrade_note
@@ -398,14 +402,15 @@ install_selected() {
 
 # Non-interactive uninstall of selected plugins
 uninstall_selected() {
-    local ids=$(normalize_plugin_ids "$1")
+    local ids
+    ids=$(normalize_plugin_ids "$1") || return 1
     [ -z "$ids" ] && return 1
     if ! check_environment; then exit 1; fi
     cd "$UI_DIR" || exit 1
     ensure_backup_dir
     create_timestamped_backup
     for id in $ids; do
-        uninstall_plugin "$id"
+        uninstall_plugin "$id" || return 1
     done
     print_success "Selected plugins uninstalled! Refresh the Emby web page to apply."
     print_fnos_upgrade_note
@@ -551,9 +556,9 @@ install_plugin() {
             # Home swiper plugin - inject before </head> or before <body
             log "DEBUG" "Inject home.js code..."
             if grep -q "</head>" "$index_path"; then
-                sed -i 's|</head>|<!-- home.js start --><script src="home.js"></script><!-- home.js end --></head>|' "$index_path"
+                sed -i 's|</head>|<!-- home.js start --><script src="home.js" defer></script><!-- home.js end --></head>|' "$index_path"
             else
-                sed -i 's|<body|<!-- home.js start --><script src="home.js"></script><!-- home.js end -->\n<body|' "$index_path"
+                sed -i 's|<body|<!-- home.js start --><script src="home.js" defer></script><!-- home.js end -->\n<body|' "$index_path"
             fi
             ;;
         *)
@@ -572,6 +577,7 @@ install_plugin() {
         print_error "$name installation failed, restoring..."
         mv "${index_path}.inject_backup" "$index_path"
         log "ERROR" "Installation verification failed: $name - marker $marker not found, restored"
+        return 1
     fi
     
     return 0
@@ -604,7 +610,8 @@ uninstall_plugin() {
     fi
     
     # Remove injected code from index.html
-    sed -i "/$marker/d" "$UI_DIR/$INDEX_FILE"
+    local marker_pattern=$(printf '%s' "$marker" | sed 's/[.]/\\./g')
+    sed -i "s|<!-- $marker_pattern start -->[^!]*<!-- $marker_pattern end -->||g;s|<!-- $marker_pattern -->||g" "$UI_DIR/$INDEX_FILE"
     
     if [ "$quiet" != "quiet" ]; then
         print_success "$name uninstalled"
@@ -922,6 +929,7 @@ main() {
                 shift
                 if [ -n "$1" ]; then
                     install_selected "$1"
+                    exit $?
                 else
                     print_error "--install requires plugin IDs (e.g. danmaku,player)"
                     exit 1
@@ -932,6 +940,7 @@ main() {
                 shift
                 if [ -n "$1" ]; then
                     uninstall_selected "$1"
+                    exit $?
                 else
                     print_error "--uninstall requires plugin IDs"
                     exit 1
@@ -944,27 +953,12 @@ main() {
                 shift
                 ;;
             --install-all)
-                check_environment || exit 1
-                cd "$UI_DIR" || exit 1
-                ensure_backup_dir
-                create_original_backup
-                create_timestamped_backup
-                for id in $PLUGIN_LIST; do
-                    install_plugin "$id"
-                done
-                print_success "All plugins installed"
-                exit 0
+                install_selected "$PLUGIN_LIST"
+                exit $?
                 ;;
             --uninstall-all)
-                check_environment || exit 1
-                cd "$UI_DIR" || exit 1
-                ensure_backup_dir
-                create_timestamped_backup
-                for id in $PLUGIN_LIST; do
-                    uninstall_plugin "$id"
-                done
-                print_success "All plugins uninstalled"
-                exit 0
+                uninstall_selected "$PLUGIN_LIST"
+                exit $?
                 ;;
             *)
                 print_error "Unknown option: $1"

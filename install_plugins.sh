@@ -195,6 +195,8 @@ configure_custom_path() {
         if [ -n "$custom_path" ]; then
             UI_DIR="$custom_path"
             BACKUP_DIR="${custom_path}/.plugin_backups"
+            UI_DIR_EXPLICIT=1
+            IS_FNOS_NATIVE=0
             print_success "已设置自定义路径: $UI_DIR"
         fi
     fi
@@ -374,7 +376,8 @@ normalize_plugin_ids() {
         if [ "$ok" = "1" ]; then
             out="$out $id"
         else
-            print_error "未知插件 ID: $id (可用: $PLUGIN_LIST)"
+            print_error "未知插件 ID: $id (可用: $PLUGIN_LIST)" >&2
+            return 1
         fi
     done
     echo "$out"
@@ -382,7 +385,8 @@ normalize_plugin_ids() {
 
 # 非交互式安装指定插件
 install_selected() {
-    local ids=$(normalize_plugin_ids "$1")
+    local ids
+    ids=$(normalize_plugin_ids "$1") || return 1
     [ -z "$ids" ] && return 1
     if ! check_environment; then exit 1; fi
     cd "$UI_DIR" || exit 1
@@ -390,7 +394,7 @@ install_selected() {
     create_original_backup
     create_timestamped_backup
     for id in $ids; do
-        install_plugin "$id"
+        install_plugin "$id" || return 1
     done
     print_success "指定插件安装完成！刷新 Emby 网页即可生效。"
     print_fnos_upgrade_note
@@ -398,14 +402,15 @@ install_selected() {
 
 # 非交互式卸载指定插件
 uninstall_selected() {
-    local ids=$(normalize_plugin_ids "$1")
+    local ids
+    ids=$(normalize_plugin_ids "$1") || return 1
     [ -z "$ids" ] && return 1
     if ! check_environment; then exit 1; fi
     cd "$UI_DIR" || exit 1
     ensure_backup_dir
     create_timestamped_backup
     for id in $ids; do
-        uninstall_plugin "$id"
+        uninstall_plugin "$id" || return 1
     done
     print_success "指定插件已卸载！刷新 Emby 网页即可生效。"
     print_fnos_upgrade_note
@@ -551,9 +556,9 @@ install_plugin() {
             # 首页轮播插件 - 注入到 </head> 前或 <body 前
             log "DEBUG" "注入 home.js 代码..."
             if grep -q "</head>" "$index_path"; then
-                sed -i 's|</head>|<!-- home.js start --><script src="home.js"></script><!-- home.js end --></head>|' "$index_path"
+                sed -i 's|</head>|<!-- home.js start --><script src="home.js" defer></script><!-- home.js end --></head>|' "$index_path"
             else
-                sed -i 's|<body|<!-- home.js start --><script src="home.js"></script><!-- home.js end -->\n<body|' "$index_path"
+                sed -i 's|<body|<!-- home.js start --><script src="home.js" defer></script><!-- home.js end -->\n<body|' "$index_path"
             fi
             ;;
         *)
@@ -572,6 +577,7 @@ install_plugin() {
         print_error "$name 安装失败，正在恢复..."
         mv "${index_path}.inject_backup" "$index_path"
         log "ERROR" "安装验证失败: $name - 未找到标记 $marker，已恢复"
+        return 1
     fi
     
     return 0
@@ -604,7 +610,8 @@ uninstall_plugin() {
     fi
     
     # 移除 index.html 中的注入代码
-    sed -i "/$marker/d" "$UI_DIR/$INDEX_FILE"
+    local marker_pattern=$(printf '%s' "$marker" | sed 's/[.]/\\./g')
+    sed -i "s|<!-- $marker_pattern start -->[^!]*<!-- $marker_pattern end -->||g;s|<!-- $marker_pattern -->||g" "$UI_DIR/$INDEX_FILE"
     
     if [ "$quiet" != "quiet" ]; then
         print_success "$name 已卸载"
@@ -922,6 +929,7 @@ main() {
                 shift
                 if [ -n "$1" ]; then
                     install_selected "$1"
+                    exit $?
                 else
                     print_error "--install 需要插件 ID 参数 (如 danmaku,player)"
                     exit 1
@@ -932,6 +940,7 @@ main() {
                 shift
                 if [ -n "$1" ]; then
                     uninstall_selected "$1"
+                    exit $?
                 else
                     print_error "--uninstall 需要插件 ID 参数"
                     exit 1
@@ -944,27 +953,12 @@ main() {
                 shift
                 ;;
             --install-all)
-                check_environment || exit 1
-                cd "$UI_DIR" || exit 1
-                ensure_backup_dir
-                create_original_backup
-                create_timestamped_backup
-                for id in $PLUGIN_LIST; do
-                    install_plugin "$id"
-                done
-                print_success "全部插件安装完成"
-                exit 0
+                install_selected "$PLUGIN_LIST"
+                exit $?
                 ;;
             --uninstall-all)
-                check_environment || exit 1
-                cd "$UI_DIR" || exit 1
-                ensure_backup_dir
-                create_timestamped_backup
-                for id in $PLUGIN_LIST; do
-                    uninstall_plugin "$id"
-                done
-                print_success "全部插件已卸载"
-                exit 0
+                uninstall_selected "$PLUGIN_LIST"
+                exit $?
                 ;;
             *)
                 print_error "未知选项: $1"

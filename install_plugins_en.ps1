@@ -261,6 +261,7 @@ function Normalize-PluginIds{
                 if($result -notcontains $id){$result += $id}
             }else{
                 Print-ErrorMsg "Unknown plugin ID: $id (available: $($PLUGIN_LIST -join ', '))"
+                return @()
             }
         }
     }
@@ -277,7 +278,9 @@ function Install-Selected{
     Ensure-BackupDir
     Create-OriginalBackup
     Create-TimestampedBackup
-    foreach($pluginId in $todo){Install-Plugin $pluginId}
+    foreach($pluginId in $todo){
+        if(!(Install-Plugin $pluginId)){return $false}
+    }
     Print-Success "Selected plugins installed! Refresh Emby web page to take effect."
     return $true
 }
@@ -309,6 +312,7 @@ function Install-Plugin([string]$id){
         $target = $dir
     }
     
+    $downloadFailed = $false
     foreach($f in $p.files){
         $name = [System.IO.Path]::GetFileName($f)
         if($id -eq "player"){$name = "externalPlayer.js"}
@@ -322,9 +326,12 @@ function Install-Plugin([string]$id){
             Write-Host "OK" -ForegroundColor Green
         }else{
             Write-Host "FAILED" -ForegroundColor Red
+            $downloadFailed = $true
         }
     }
     
+    if($downloadFailed){return $false}
+
     $c = Get-Content(Join-Path $script:UI_DIR "index.html")-Raw
     $mk = $p.marker
     
@@ -341,7 +348,7 @@ function Install-Plugin([string]$id){
         }elseif($id -eq "danmaku"){
             $inj = '<script src="dd-danmaku/ede.js"></script>'
         }elseif($id -eq "swiper"){
-            $inj = '<script src="home.js"></script>'
+            $inj = '<script src="home.js" defer></script>'
         }
         
         if($c -match "</head>"){
@@ -351,8 +358,11 @@ function Install-Plugin([string]$id){
         }
     }
     
+    if(!$c.Contains($inj)){Print-ErrorMsg "No HTML injection point found";return $false}
+
     $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8
     Print-Success "$($p.name) installation completed"
+    return $true
 }
 
 # Uninstall plugin
@@ -375,8 +385,14 @@ function Uninstall-Plugin([string]$id){
         }
     }
     
-    $c = Get-Content(Join-Path $script:UI_DIR "index.html")|Where-Object{$_ -notmatch $p.marker}
-    $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8
+    $c = Get-Content(Join-Path $script:UI_DIR "index.html") -Raw
+    $assetPattern = [regex]::Escape($p.marker)
+    if($p.dir){$assetPattern = [regex]::Escape($p.dir) + '/[^"'']+'}
+    $scriptPattern = '<script\b[^>]*\bsrc=["'']' + $assetPattern + '["''][^>]*>\s*</script>'
+    $stylePattern = '<link\b[^>]*\bhref=["'']' + $assetPattern + '["''][^>]*>'
+    $c = [regex]::Replace($c, $scriptPattern + '|' + $stylePattern, '', 'IgnoreCase')
+    $c = [regex]::Replace($c, '<!-- ' + [regex]::Escape($p.marker) + '(?: start| end)? -->', '')
+    $c|Out-File(Join-Path $script:UI_DIR "index.html") -Encoding UTF8 -NoNewline
     Print-Success "$($p.name) uninstalled"
 }
 
@@ -465,7 +481,7 @@ function Install-Menu{
         
         # Install
         Write-Host ""
-        foreach($pluginId in $todo){Install-Plugin $pluginId}
+        foreach($pluginId in $todo){Install-Plugin $pluginId | Out-Null}
         
         Write-Host ""
         Print-Success "Installation complete! Refresh Emby web to see changes."
@@ -580,22 +596,18 @@ function Main{
         exit
     }
 
-    if($InstallIds){
+    if($script:PSBoundParameters.ContainsKey("InstallIds")){
         if(!(Install-Selected $InstallIds)){exit 1}
         exit
     }
 
-    if($UninstallIds){
+    if($script:PSBoundParameters.ContainsKey("UninstallIds")){
         if(!(Uninstall-Selected $UninstallIds)){exit 1}
         exit
     }
     
     if($InstallAll){
-        Ensure-BackupDir
-        Create-OriginalBackup
-        Create-TimestampedBackup
-        foreach($i in $PLUGIN_LIST){Install-Plugin $i}
-        Print-Success "All plugins installed"
+        if(!(Install-Selected $PLUGIN_LIST)){exit 1}
         exit
     }
     
