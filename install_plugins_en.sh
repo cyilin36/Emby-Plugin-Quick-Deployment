@@ -1,9 +1,11 @@
 #!/bin/sh
 # ============================================================================
-# Emby Plugin Management Script v1.0.0
+# Emby Plugin Management Script v1.1.0
 # Suitable for Emby Docker minimal terminal (BusyBox/Alpine sh)
-# 
-# Features: Selective install/uninstall plugins, backup/restore, domestic mirror acceleration
+# Also supports Emby installed natively from the fnOS app store (auto-detect, needs sudo)
+#
+# Features: Selective install/uninstall plugins, backup/restore, domestic mirror acceleration,
+#           automatic fnOS native path detection
 # Author: xueayi
 # Project: https://github.com/xueayi/Emby-Plugin-Quick-Deployment
 # ============================================================================
@@ -11,12 +13,16 @@
 # ========================== Global Configuration ==========================
 
 # Default paths
-VERSION="1.0.0"
+VERSION="1.1.0"
 UI_DIR="/system/dashboard-ui"
 BACKUP_DIR="/system/dashboard-ui/.plugin_backups"
 MAX_BACKUPS=5
 INDEX_FILE="index.html"
 LOG_FILE="/tmp/emby_plugin_install.log"
+
+# Path resolution state: UI_DIR_EXPLICIT=1 when the user passed --ui-dir
+UI_DIR_EXPLICIT=0
+IS_FNOS_NATIVE=0
 
 # Download source configuration
 GITHUB_RAW="https://raw.githubusercontent.com"
@@ -73,9 +79,10 @@ PLUGIN_SWIPER_NAME="Home Swiper (Emby Home Swiper)"
 PLUGIN_SWIPER_DESC="Modern full-screen carousel banner, display latest media (Recommended for Emby 4.9+)"
 PLUGIN_SWIPER_DIR=""
 PLUGIN_SWIPER_PROJECT="https://github.com/sohag1192/Emby-Home-Swiper-UI"
-PLUGIN_SWIPER_FILES="v1/home.js"
+# Upstream v2 path (v1/home.js was moved upstream and returns 404); v2 requires defer
+PLUGIN_SWIPER_FILES="home-swiper-v2/home-swiper.js"
 PLUGIN_SWIPER_BASE_PATH="sohag1192/Emby-Home-Swiper-UI/refs/heads/main"
-PLUGIN_SWIPER_INJECT_HEAD='<script src="home.js"></script>'
+PLUGIN_SWIPER_INJECT_HEAD='<script src="home.js" defer></script>'
 PLUGIN_SWIPER_MARKER="home.js"
 
 # Plugin list (space separated IDs)
@@ -155,6 +162,25 @@ download_file() {
 
 # ========================== Environment Check ==========================
 
+# fnOS native app detection: when no explicit path is set and running on the
+# fnOS host, find /var/apps/*/target/system/dashboard-ui automatically.
+detect_ui_dir() {
+    if [ "$UI_DIR_EXPLICIT" = "1" ]; then
+        return 0
+    fi
+    if [ -d "/var/apps" ] && [ -d "/usr/trim" ]; then
+        for d in /var/apps/*/target/system/dashboard-ui; do
+            if [ -f "$d/$INDEX_FILE" ]; then
+                UI_DIR="$d"
+                BACKUP_DIR="$d/.plugin_backups"
+                IS_FNOS_NATIVE=1
+                return 0
+            fi
+        done
+    fi
+    return 1
+}
+
 # Configure custom path
 configure_custom_path() {
     echo ""
@@ -176,6 +202,13 @@ configure_custom_path() {
 
 check_environment() {
     print_info "Checking environment..."
+
+    # Auto-detect the fnOS native path
+    if detect_ui_dir; then
+        if [ "$IS_FNOS_NATIVE" = "1" ]; then
+            print_success "Detected fnOS native Emby application"
+        fi
+    fi
     
     # Check UI directory
     if [ ! -d "$UI_DIR" ]; then
@@ -194,6 +227,9 @@ check_environment() {
     # Check write permission
     if [ ! -w "$UI_DIR" ]; then
         print_error "No write permission: $UI_DIR"
+        if [ "$IS_FNOS_NATIVE" = "1" ]; then
+            print_info "The fnOS native application directory requires root; run this script with sudo"
+        fi
         return 1
     fi
     
@@ -318,6 +354,63 @@ restore_backup() {
 
 # ========================== Plugin Operations ==========================
 
+# fnOS native note: app upgrades reset the target directory, so plugins must be reinstalled
+print_fnos_upgrade_note() {
+    if [ "$IS_FNOS_NATIVE" = "1" ]; then
+        echo ""
+        print_warning "fnOS note: upgrading Emby in App Center resets the program directory; rerun this script afterward"
+    fi
+}
+
+# Validate plugin IDs and normalize comma/space-separated input to a space-separated list
+normalize_plugin_ids() {
+    local raw="$1"
+    local id out=""
+    for id in $(echo "$raw" | tr ',' ' '); do
+        local ok=0
+        for known in $PLUGIN_LIST; do
+            [ "$id" = "$known" ] && ok=1 && break
+        done
+        if [ "$ok" = "1" ]; then
+            out="$out $id"
+        else
+            print_error "Unknown plugin ID: $id (available: $PLUGIN_LIST)"
+        fi
+    done
+    echo "$out"
+}
+
+# Non-interactive install of selected plugins
+install_selected() {
+    local ids=$(normalize_plugin_ids "$1")
+    [ -z "$ids" ] && return 1
+    if ! check_environment; then exit 1; fi
+    cd "$UI_DIR" || exit 1
+    ensure_backup_dir
+    create_original_backup
+    create_timestamped_backup
+    for id in $ids; do
+        install_plugin "$id"
+    done
+    print_success "Selected plugins installed! Refresh the Emby web page to apply."
+    print_fnos_upgrade_note
+}
+
+# Non-interactive uninstall of selected plugins
+uninstall_selected() {
+    local ids=$(normalize_plugin_ids "$1")
+    [ -z "$ids" ] && return 1
+    if ! check_environment; then exit 1; fi
+    cd "$UI_DIR" || exit 1
+    ensure_backup_dir
+    create_timestamped_backup
+    for id in $ids; do
+        uninstall_plugin "$id"
+    done
+    print_success "Selected plugins uninstalled! Refresh the Emby web page to apply."
+    print_fnos_upgrade_note
+}
+
 # Get plugin attribute
 get_plugin_attr() {
     local plugin_id="$1"
@@ -391,6 +484,9 @@ install_plugin() {
             # Special handling: rename external player
             if [ "$plugin_id" = "player" ]; then
                 output="$UI_DIR/externalPlayer.js"
+            elif [ "$plugin_id" = "swiper" ]; then
+                # Swiper v2 is injected under the fixed home.js name
+                output="$UI_DIR/home.js"
             else
                 output="$UI_DIR/$filename"
             fi
@@ -501,6 +597,10 @@ uninstall_plugin() {
         if [ "$plugin_id" = "player" ]; then
             rm -f "$UI_DIR/externalPlayer.js" 2>/dev/null
         fi
+        # Swiper v2 is injected under the fixed home.js name
+        if [ "$plugin_id" = "swiper" ]; then
+            rm -f "$UI_DIR/home.js" 2>/dev/null
+        fi
     fi
     
     # Remove injected code from index.html
@@ -596,6 +696,7 @@ install_menu() {
     
     echo ""
     print_success "Installation completed! Refresh Emby web page to take effect."
+    print_fnos_upgrade_note
 }
 
 # Uninstall menu
@@ -640,6 +741,7 @@ uninstall_menu() {
     
     echo ""
     print_success "Uninstallation completed! Refresh Emby web page to take effect."
+    print_fnos_upgrade_note
 }
 
 # Backup management menu
@@ -738,6 +840,9 @@ main_menu() {
                     print_error "Invalid path configuration, restored to default"
                     UI_DIR="/system/dashboard-ui"
                     BACKUP_DIR="/system/dashboard-ui/.plugin_backups"
+                    UI_DIR_EXPLICIT=0
+                    IS_FNOS_NATIVE=0
+                    detect_ui_dir
                 fi
                 ;;
             5) show_help ;;
@@ -763,9 +868,15 @@ show_usage() {
     echo "  -v, --version        Display version information"
     echo "  -s, --status         Display plugin status"
     echo "  --ui-dir <path>      Specify absolute path of index.html directory"
+    echo "  --install <ids>      Non-interactively install plugins (comma-separated, e.g. danmaku,player)"
+    echo "  --uninstall <ids>    Non-interactively uninstall plugins"
     echo "  --install-all        Non-interactive install all plugins"
     echo "  --uninstall-all      Non-interactive uninstall all plugins"
     echo "  --use-mirror         Use domestic mirror"
+    echo ""
+    echo "Plugin IDs: $PLUGIN_LIST"
+    echo "fnOS native: automatically detects /var/apps/*/target/system/dashboard-ui on the fnOS host;"
+    echo "             run with sudo. App upgrades reset plugins; rerun this script afterward."
     echo ""
     echo "Interactive mode: $0"
 }
@@ -799,12 +910,33 @@ main() {
                 if [ -n "$1" ]; then
                     UI_DIR="$1"
                     BACKUP_DIR="${1}/.plugin_backups"
+                    UI_DIR_EXPLICIT=1
                     print_info "Using custom path: $UI_DIR"
                 else
                     print_error "--ui-dir requires a path argument"
                     exit 1
                 fi
                 shift
+                ;;
+            --install)
+                shift
+                if [ -n "$1" ]; then
+                    install_selected "$1"
+                else
+                    print_error "--install requires plugin IDs (e.g. danmaku,player)"
+                    exit 1
+                fi
+                exit 0
+                ;;
+            --uninstall)
+                shift
+                if [ -n "$1" ]; then
+                    uninstall_selected "$1"
+                else
+                    print_error "--uninstall requires plugin IDs"
+                    exit 1
+                fi
+                exit 0
                 ;;
             --use-mirror)
                 CURRENT_SOURCE="mirror"
@@ -845,6 +977,11 @@ main() {
     # Environment check
     if ! check_environment; then
         exit 1
+    fi
+
+    # Warn when fnOS native mode is not running as root
+    if [ "$IS_FNOS_NATIVE" = "1" ] && [ "$(id -u)" != "0" ]; then
+        print_warning "Not running as root: fnOS native app files may not be writable, rerun with sudo"
     fi
     
     # Switch to UI directory

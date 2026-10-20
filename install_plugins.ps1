@@ -1,13 +1,17 @@
 ﻿# ============================================================================
-# Emby 插件管理脚本 (Windows PowerShell 版) v1.0.0
+# Emby 插件管理脚本 (Windows PowerShell 版) v1.1.0
 #
-# 功能: 选择性安装/卸载插件、备份恢复、国内加速源
+# 功能: 选择性安装/卸载插件、备份恢复、国内加速源、指定插件命令行操作
 # 作者: xueayi
 # ============================================================================
 
 param(
     [string]$UiDir,
     [switch]$Status,
+    [Alias("Install")]
+    [string[]]$InstallIds,
+    [Alias("Uninstall")]
+    [string[]]$UninstallIds,
     [switch]$InstallAll,
     [switch]$UninstallAll,
     [switch]$UseMirror,
@@ -15,7 +19,7 @@ param(
     [switch]$ShowVersion
 )
 
-$VERSION = "1.0.0"
+$VERSION = "1.1.0"
 
 # ========================== 全局配置 ==========================
 
@@ -60,7 +64,7 @@ $PLUGINS = @{
         desc="全屏轮播横幅"
         dir=""
         base_path="sohag1192/Emby-Home-Swiper-UI/refs/heads/main"
-        files=@("v1/home.js")
+        files=@("home-swiper-v2/home-swiper.js")
         marker="home.js"
     }
 }
@@ -244,6 +248,53 @@ function Show-PluginStatus{
 
 # ========================== 核心引擎 ==========================
 
+# 校验并归一化插件 ID
+function Normalize-PluginIds{
+    param([string[]]$RawIds)
+
+    $result = @()
+    foreach($raw in $RawIds){
+        foreach($id in ($raw -split '[,\s]+')){
+            if(!$id){continue}
+            if($PLUGINS.ContainsKey($id)){
+                if($result -notcontains $id){$result += $id}
+            }else{
+                Print-ErrorMsg "未知插件 ID: $id (可用: $($PLUGIN_LIST -join ', '))"
+            }
+        }
+    }
+    return $result
+}
+
+# 非交互式安装指定插件
+function Install-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-OriginalBackup
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){Install-Plugin $pluginId}
+    Print-Success "指定插件安装完成! 刷新Emby网页即可生效."
+    return $true
+}
+
+# 非交互式卸载指定插件
+function Uninstall-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){Uninstall-Plugin $pluginId}
+    Print-Success "指定插件已卸载! 刷新Emby网页即可生效."
+    return $true
+}
+
 # 安装插件
 function Install-Plugin([string]$id){
     $p = $PLUGINS[$id]
@@ -353,6 +404,8 @@ function Show-Help{
     Print-Info "命令行选项:"
     Write-Host "  -UiDir <路径>     指定Emby dashboard-ui目录"
     Write-Host "  -Status           显示插件状态"
+    Write-Host "  -Install <ids>    安装指定插件 (逗号分隔, 如 danmaku,player)"
+    Write-Host "  -Uninstall <ids>  卸载指定插件"
     Write-Host "  -InstallAll       安装所有插件"
     Write-Host "  -UninstallAll     卸载所有插件"
     Write-Host "  -UseMirror        使用国内加速源(ghproxy.net)"
@@ -525,6 +578,16 @@ function Main{
     
     if($Status){
         Show-PluginStatus
+        exit
+    }
+
+    if($InstallIds){
+        if(!(Install-Selected $InstallIds)){exit 1}
+        exit
+    }
+
+    if($UninstallIds){
+        if(!(Uninstall-Selected $UninstallIds)){exit 1}
         exit
     }
     

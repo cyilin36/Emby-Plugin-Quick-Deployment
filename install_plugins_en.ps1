@@ -1,13 +1,18 @@
 # ============================================================================
-# Emby Plugin Manager (Windows PowerShell) v1.0.0
+# Emby Plugin Manager (Windows PowerShell) v1.1.0
 #
-# Features: Selective install/uninstall plugins, backup/restore, China mirror
+# Features: Selective install/uninstall plugins, backup/restore, China mirror,
+#           command-line install/uninstall for selected plugins
 # Author: xueayi
 # ============================================================================
 
 param(
     [string]$UiDir,
     [switch]$Status,
+    [Alias("Install")]
+    [string[]]$InstallIds,
+    [Alias("Uninstall")]
+    [string[]]$UninstallIds,
     [switch]$InstallAll,
     [switch]$UninstallAll,
     [switch]$UseMirror,
@@ -15,7 +20,7 @@ param(
     [switch]$ShowVersion
 )
 
-$VERSION = "1.0.0"
+$VERSION = "1.1.0"
 
 # ========================== Global Config ==========================
 
@@ -60,7 +65,7 @@ $PLUGINS = @{
         desc="Full screen banner"
         dir=""
         base_path="sohag1192/Emby-Home-Swiper-UI/refs/heads/main"
-        files=@("v1/home.js")
+        files=@("home-swiper-v2/home-swiper.js")
         marker="home.js"
     }
 }
@@ -244,6 +249,53 @@ function Show-PluginStatus{
 
 # ========================== Core Engine ==========================
 
+# Validate and normalize plugin IDs
+function Normalize-PluginIds{
+    param([string[]]$RawIds)
+
+    $result = @()
+    foreach($raw in $RawIds){
+        foreach($id in ($raw -split '[,\s]+')){
+            if(!$id){continue}
+            if($PLUGINS.ContainsKey($id)){
+                if($result -notcontains $id){$result += $id}
+            }else{
+                Print-ErrorMsg "Unknown plugin ID: $id (available: $($PLUGIN_LIST -join ', '))"
+            }
+        }
+    }
+    return $result
+}
+
+# Non-interactive install of selected plugins
+function Install-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-OriginalBackup
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){Install-Plugin $pluginId}
+    Print-Success "Selected plugins installed! Refresh Emby web page to take effect."
+    return $true
+}
+
+# Non-interactive uninstall of selected plugins
+function Uninstall-Selected{
+    param([string[]]$Ids)
+
+    $todo = Normalize-PluginIds $Ids
+    if($todo.Count -eq 0){return $false}
+
+    Ensure-BackupDir
+    Create-TimestampedBackup
+    foreach($pluginId in $todo){Uninstall-Plugin $pluginId}
+    Print-Success "Selected plugins uninstalled! Refresh Emby web page to take effect."
+    return $true
+}
+
 # Install plugin
 function Install-Plugin([string]$id){
     $p = $PLUGINS[$id]
@@ -351,6 +403,8 @@ function Show-Help{
     Print-Info "Options:"
     Write-Host "  -UiDir <path>     Specify Emby dashboard-ui directory"
     Write-Host "  -Status           Show plugin status"
+    Write-Host "  -Install <ids>    Install selected plugins (comma-separated, e.g. danmaku,player)"
+    Write-Host "  -Uninstall <ids>  Uninstall selected plugins"
     Write-Host "  -InstallAll       Install all plugins"
     Write-Host "  -UninstallAll     Uninstall all plugins"
     Write-Host "  -UseMirror        Use China mirror (ghproxy.net)"
@@ -523,6 +577,16 @@ function Main{
     
     if($Status){
         Show-PluginStatus
+        exit
+    }
+
+    if($InstallIds){
+        if(!(Install-Selected $InstallIds)){exit 1}
+        exit
+    }
+
+    if($UninstallIds){
+        if(!(Uninstall-Selected $UninstallIds)){exit 1}
         exit
     }
     
